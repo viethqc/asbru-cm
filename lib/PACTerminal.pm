@@ -2166,7 +2166,7 @@ sub _vteMenu {
                 $$self{_CFG}{environments}{$newuuid} = dclone($$self{_CFG}{environments}{$$self{_UUID}});
                 $$self{_CFG}{environments}{$newuuid}{method} = 'SFTP';
                 $$self{_CFG}{environments}{$newuuid}{expect} = [];
-                $$self{_CFG}{environments}{$newuuid}{options} = '';
+                $$self{_CFG}{environments}{$newuuid}{options} = get_ssh_options($$self{_CFG}{environments}{$$self{_UUID}}{options});;
                 $$self{_CFG}{environments}{$newuuid}{_protected} = 1;
                 $PACMain::{FUNCS}{_MAIN}->_launchTerminals(\@idx);
             }
@@ -2290,6 +2290,29 @@ sub _vteMenu {
 
     _wPopUpMenu(\@vte_menu_items, $event);
     return 1;
+}
+
+sub get_ssh_options {
+    my $str = @_[0];
+
+    my $iOptions = index($str, "-o ");
+    if ($iOptions == -1) {
+        return ""
+    }
+
+    my $firstQuote = index($str, "\"", $iOptions);
+    if ($firstQuote == -1) {
+        return ""
+    }
+
+    my $lastQuote = index($str, "\"", $firstQuote + 1);
+    if ($lastQuote == -1) {
+        return ""
+    }
+
+    my $sOptions = substr($str, $iOptions, $lastQuote - $iOptions  + 1);
+
+    return $sOptions
 }
 
 sub _pasteToVte {
