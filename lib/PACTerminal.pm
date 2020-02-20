@@ -42,6 +42,8 @@ use Encode qw (encode decode);
 use IO::Socket::INET;
 use Time::HiRes qw (gettimeofday);
 use KeePass;
+use XML::LibXML;
+use File::Copy qw(move);
 
 # GTK
 use Gtk3 '-init';
@@ -2173,6 +2175,27 @@ sub _vteMenu {
         });
     }
 
+    if (($$self{_CFG}{environments}{$$self{_UUID}}{method} =~ /^.*ssh.*$/) || ($$self{_CFG}{environments}{$$self{_UUID}}{method} eq 'SSH')) {
+        # Open SFTP to this connection if it is SSH
+        push(@vte_menu_items, {
+            label => 'Open new Filezilla window',
+            stockicon => 'pac-method-SFTP',
+            sensitive => 1,
+            code => sub {
+                my @idx;
+                my $newuuid = '_tmp_' . rand;
+                
+                my $ssh_options = get_ssh_options($$self{_CFG}{environments}{$$self{_UUID}}{options});
+                my ($proxy_ip, $proxy_port) = get_proxy_info_from_ssh_options($ssh_options);
+                my $host = $$self{_CFG}{environments}{$$self{_UUID}}{ip};
+                my $port = $$self{_CFG}{environments}{$$self{_UUID}}{port};
+                my $user = $$self{_CFG}{environments}{$$self{_UUID}}{user};
+                my $pass = $$self{_CFG}{environments}{$$self{_UUID}}{pass};
+                open_file_zilla($host, $port, $user, $pass, $proxy_ip, $proxy_port);
+            }
+        });
+    }
+
     # Terminal reset options
     push(@vte_menu_items,
     {
@@ -2313,6 +2336,92 @@ sub get_ssh_options {
     my $sOptions = substr($str, $iOptions, $lastQuote - $iOptions  + 1);
 
     return $sOptions
+}
+
+sub get_proxy_info_from_ssh_options {
+    my $ssh_option = shift;
+
+    my $ip_port = "";
+    my @arr_ssh_options = split(" ", $ssh_option); 
+
+    foreach my $i (@arr_ssh_options)  
+    {
+        if ($i =~ "^(([0-9]|[1-9][0-9]|1[0-9]{2}|2[0-4][0-9]|25[0-5])\.){3}([0-9]|[1-9][0-9]|1[0-9]{2}|2[0-4][0-9]|25[0-5]):[0-9]+\$"){
+            $ip_port = $i;
+            last;
+        }
+    }
+
+    if ($ip_port eq "") {
+        return ("", "");
+    }
+
+    my @arr_ip_port = split(":", $ip_port);
+    my $ip = @arr_ip_port[0];
+    my $port = @arr_ip_port[1];
+
+    return ($ip, $port);
+}
+
+sub get_filezilla_config {
+    my $login = getlogin || getpwuid($<);
+    my $filezilla_conf = "/home/" . $login ."/.config/filezilla/filezilla.xml";
+
+    return $filezilla_conf
+}
+
+sub edit_filezilla_config {
+    my $proxy_host = shift;
+    my $proxy_port = shift;
+
+    print "$proxy_host $proxy_port\n";
+
+    my $filezilla_conf = get_filezilla_config();
+    my $filezilla_conf_bak = $filezilla_conf . ".bak";
+    move $filezilla_conf, $filezilla_conf_bak;
+
+    my $dom = XML::LibXML->load_xml(location => $filezilla_conf_bak);
+
+    my($node)  = $dom->findnodes('/FileZilla3/Settings/Setting[@name="Proxy type"]/text()');
+    if ($proxy_host != "" && $proxy_port != "") {
+        $node->setData("2");
+    } else {
+        $node->setData("0");
+    }
+
+
+    my($node_host)  = $dom->findnodes('/FileZilla3/Settings/Setting[@name="Proxy host"]/text()');
+    $node_host->setData($proxy_host);
+
+    my($node_port)  = $dom->findnodes('/FileZilla3/Settings/Setting[@name="Proxy port"]/text()');
+    $node_port->setData($proxy_port);
+
+    $dom->toFile($filezilla_conf);
+
+    return ($filezilla_conf, $filezilla_conf_bak);
+}
+
+sub open_file_zilla {
+    my $host = shift;
+    my $port = shift;
+    my $user = shift;
+    my $pass = shift;
+    my $proxy_host = shift;
+    my $proxy_port = shift;
+
+    my ($filezilla_conf, $filezilla_conf_bak) = edit_filezilla_config($proxy_host, $proxy_port);
+    
+    my $command = sprintf("filezilla %s:%s@%s:%s", $user, $pass, $host, $port);
+    print "$command\n";
+
+    unless (fork) {
+        system($command);
+        exit;
+    }
+
+    sleep(5);
+    unlink $filezilla_conf;
+    move $filezilla_conf_bak, $filezilla_conf;
 }
 
 sub _pasteToVte {

@@ -6,7 +6,7 @@ use XML::LibXML;
 use File::Copy qw(move);
 
 $array = '  -x -C -o "ProxyCommand=nc -x 127.0.0.1:1111 %h %p" -R  localhost:1345:192.168.5.8:3128  localhost:3128:192.168.5.8:3128 ';
-$array = '-o "ProxyCommand=nc -x 127.0.0.1:1111 %h %p"';
+$array = '-o "ProxyCommand=nc -x 127.0.0.1:1080 %h %p"';
 
 # for $i (0..length($array)-1){
 #     $char = substr($array, $i, 3);
@@ -59,7 +59,12 @@ sub edit_filezilla_config {
     my $dom = XML::LibXML->load_xml(location => $filezilla_conf_bak);
 
     my($node)  = $dom->findnodes('/FileZilla3/Settings/Setting[@name="Proxy type"]/text()');
-    $node->setData(2);
+    if ($proxy_host != "" && $proxy_port != "") {
+        $node->setData(2);
+    } else {
+        $node->setData(0);
+    }
+
 
     my($node)  = $dom->findnodes('/FileZilla3/Settings/Setting[@name="Proxy host"]/text()');
     $node->setData($proxy_host);
@@ -81,6 +86,7 @@ sub open_file_zilla {
     my $proxy_port = shift;
 
     ($filezilla_conf, $filezilla_conf_bak) = edit_filezilla_config($proxy_host, $proxy_port);
+    
     my $command = sprintf("filezilla %s:%s@%s:%s", $user, $pass, $host, $port);
     print "$command\n";
 
@@ -99,6 +105,31 @@ sub open_file_zilla {
 # system("filezilla");
 
 open_file_zilla("10.0.2.16", 22, "test", "a", "127.0.0.1", 1080);
+
+sub get_proxy_info_from_ssh_options {
+    my $ssh_option = shift;
+
+    $ip_port = "";
+    my @arr_ssh_options = split(" ", $ssh_option); 
+
+    foreach my $i (@arr_ssh_options)  
+    {
+        if ($i =~ "^(([0-9]|[1-9][0-9]|1[0-9]{2}|2[0-4][0-9]|25[0-5])\.){3}([0-9]|[1-9][0-9]|1[0-9]{2}|2[0-4][0-9]|25[0-5]):[0-9]+\$"){
+            $ip_port = $i;
+            last;
+        }
+    }
+
+    my @arr_ip_port = split(":", $ip_port);
+    my $ip = @arr_ip_port[0];
+    my $port = @arr_ip_port[1];
+
+    print "$ip $port\n";
+}
+
+get_proxy_info_from_ssh_options($array)
+
+
 
 # my $xml_file = 'filezilla.xml';
 
